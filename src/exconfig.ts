@@ -6,6 +6,7 @@ export default {
   showTransactionConfirmationScreen: true,
   factory_address: '0x9406Cc6185a346906296840746125a0E44976454',
   stateVersion: '0.1',
+  paymaster:'',
   network: {
     chainID: '11155111',
     family: 'EVM',

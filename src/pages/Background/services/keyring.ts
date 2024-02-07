@@ -374,6 +374,7 @@ export default class KeyringService extends BaseService<Events> {
     userOp: UserOperationStruct
   ): Promise<string | null> => {
     if (this.bundler) {
+      //TODO
       const userOpHash = await this.bundler.sendUserOpToBundler(userOp);
       const keyring = this.keyrings[address];
       return await keyring.getUserOpReceipt(userOpHash);
@@ -382,6 +383,7 @@ export default class KeyringService extends BaseService<Events> {
   };
 
   createUnsignedUserOp = async (
+      //TODO
     address: string,
     transaction: EthersTransactionRequest,
     context?: any
