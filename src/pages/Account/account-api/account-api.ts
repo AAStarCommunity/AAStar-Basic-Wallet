@@ -7,7 +7,15 @@ import { TransactionDetailsForUserOp } from '@account-abstraction/sdk/dist/src/T
 import config from '../../../exconfig';
 import { SimpleAccountAPI } from '@account-abstraction/sdk';
 
+import {
+  UserOperation,
+  signUserOperationHashWithECDSA,
+} from "permissionless";
+import { privateKeyToAccount } from "viem/accounts"
+import { EntryPoint } from 'permissionless/types/entrypoint';
+
 const FACTORY_ADDRESS = config.factory_address;
+const polygonMumbai = config.network;
 
 /**
  * An implementation of the BaseAccountAPI using the SimpleAccount contract.
@@ -18,8 +26,7 @@ const FACTORY_ADDRESS = config.factory_address;
  */
 class SimpleAccountTrampolineAPI
   extends SimpleAccountAPI
-  implements AccountApiType
-{
+  implements AccountApiType {
   /**
    *
    * We create a new private key or use the one provided in the
@@ -34,6 +41,8 @@ class SimpleAccountTrampolineAPI
         : ethers.Wallet.createRandom(),
       factoryAddress: FACTORY_ADDRESS,
     });
+    console.log(this.owner, '初始化');
+
   }
 
   /**
@@ -55,7 +64,11 @@ class SimpleAccountTrampolineAPI
     context: any,
     request?: MessageSigningRequest
   ): Promise<string> => {
-    throw new Error('signMessage method not implemented.');
+    if (request?.rawSigningData) {
+      return await (this.owner as Wallet).signMessage(request.rawSigningData);
+    }
+    return '';
+    // throw new Error('signMessage method not implemented.');
   };
 
   /**
@@ -76,7 +89,7 @@ class SimpleAccountTrampolineAPI
   }
 
   /**
-   * Callled after the user has accepted the transaction on the transaction confirmation screen
+   * Called after the user has accepted the transaction on the transaction confirmation screen
    * The context passed to this method is the same as the one passed to the
    * onComplete method of the TransactionConfirmationComponent
    */
@@ -86,6 +99,17 @@ class SimpleAccountTrampolineAPI
   ): Promise<UserOperationStruct> => {
     return this.signUserOp(userOp);
   };
+
+  async signUserOp(userOp: UserOperationStruct): Promise<UserOperationStruct> {
+    const signature = await signUserOperationHashWithECDSA({
+      account: privateKeyToAccount((this.owner as Wallet).privateKey as `0x${string}`),
+      userOperation: userOp as UserOperation<"v0.6">,
+      chainId: Number(polygonMumbai.chainID),
+      entryPoint: this.entryPointAddress as EntryPoint,
+    })
+
+    return { ...userOp, signature: signature };
+  }
 }
 
 export default SimpleAccountTrampolineAPI;
