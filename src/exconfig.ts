@@ -9,10 +9,10 @@ export default {
   network: {
     chainID: '11155111',
     family: 'EVM',
-    name: 'Sepolia',
-    provider: 'https://sepolia.infura.io/v3/bdabe9d2f9244005af0f566398e648da',
+    name: 'Mumbai',
+    provider: 'https://mumbai.rpc.thirdweb.com',
     entryPointAddress: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789',
-    bundler: 'https://sepolia.voltaire.candidewallet.com/rpc',
+    bundler: 'https://api.pimlico.io/v1/mumbai/rpc?apikey=085e6ede-800d-4de8-af64-b1ea89b34eee',
     baseAsset: {
       symbol: 'ETH',
       name: 'ETH',
