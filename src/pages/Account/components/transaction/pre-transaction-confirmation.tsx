@@ -24,7 +24,7 @@ const AddPaymasterAndData = ({
   const [showAddPaymasterUI, setShowAddPaymasterUI] = useState<boolean>(false);
   const [addPaymasterLoader, setAddPaymasterLoader] = useState<boolean>(false);
   const [paymasterAndData, setPaymasterAndDataLocal] = useState<string>(
-    '0x000000000009B901DeC1aaB9389285965F49D387'
+    '0x0000000000325602a77416A16136FDafd04b299f'
   );
 
   const addPaymaster = useCallback(async () => {

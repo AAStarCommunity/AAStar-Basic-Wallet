@@ -15,7 +15,7 @@ import { privateKeyToAccount } from "viem/accounts"
 import { EntryPoint } from 'permissionless/types/entrypoint';
 
 const FACTORY_ADDRESS = config.factory_address;
-const polygonMumbai = config.network;
+const network = config.network;
 
 /**
  * An implementation of the BaseAccountAPI using the SimpleAccount contract.
@@ -104,7 +104,7 @@ class SimpleAccountTrampolineAPI
     const signature = await signUserOperationHashWithECDSA({
       account: privateKeyToAccount((this.owner as Wallet).privateKey as `0x${string}`),
       userOperation: userOp as UserOperation<"v0.6">,
-      chainId: Number(polygonMumbai.chainID),
+      chainId: Number(network.chainID),
       entryPoint: this.entryPointAddress as EntryPoint,
     })
 

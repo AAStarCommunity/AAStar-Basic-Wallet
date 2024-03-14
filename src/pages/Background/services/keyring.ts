@@ -21,12 +21,11 @@ import { resolveProperties } from 'ethers/lib/utils.js';
 
 import {
   UserOperation,
-  bundlerActions,
   getAccountNonce,
 } from "permissionless";
-import { pimlicoBundlerActions, pimlicoPaymasterActions } from "permissionless/actions/pimlico";
-import { createPublicClient, createClient, http, toHex } from 'viem';
-import { polygonMumbai } from 'viem/chains';
+import { pimlicoPaymasterActions } from "permissionless/actions/pimlico";
+import { createPublicClient, createClient, http, toHex, encodeFunctionData } from 'viem';
+import { sepolia } from 'viem/chains';
 import { EntryPoint } from 'permissionless/types/entrypoint';
 
 interface Events extends ServiceLifecycleEvents {
@@ -57,7 +56,6 @@ export default class KeyringService extends BaseService<Events> {
   provider: Provider;
   bundler?: HttpRpcClient;
   paymasterAPI?: PaymasterAPI;
-  bundlerClient?: any;
   paymasterClient?: any;
   publicClient?: any;
 
@@ -78,25 +76,20 @@ export default class KeyringService extends BaseService<Events> {
     const net = await this.provider.getNetwork();
 
     const chainId = net.chainId;
-    const chain = 'mumbai';
+    const chain = 'sepolia';
     const apiKey = '085e6ede-800d-4de8-af64-b1ea89b34eee';
 
-    this.bundlerClient = createClient({
-      transport: http(`https://api.pimlico.io/v1/${chain}/rpc?apikey=${apiKey}`),
-      chain: polygonMumbai,
-    })
-      .extend(bundlerActions(this.entryPointAddress as EntryPoint))
-      .extend(pimlicoBundlerActions(this.entryPointAddress as EntryPoint));
+
 
     this.paymasterClient = createClient({
       // ⚠️ using v2 of the API ⚠️
       transport: http(`https://api.pimlico.io/v2/${chain}/rpc?apikey=${apiKey}`),
-      chain: polygonMumbai,
+      chain: sepolia,
     }).extend(pimlicoPaymasterActions(this.entryPointAddress as EntryPoint));
 
     this.publicClient = createPublicClient({
-      transport: http("https://mumbai.rpc.thirdweb.com"),
-      chain: polygonMumbai,
+      transport: http("https://sepolia.infura.io/v3/bdabe9d2f9244005af0f566398e648da"),
+      chain: sepolia,
     });
 
     let bundlerRPC;
@@ -406,24 +399,13 @@ export default class KeyringService extends BaseService<Events> {
     address: string,
     userOp: UserOperation<"v0.6">
   ): Promise<string | null> => {
-    // if (this.bundler) {
-    //   const userOpHash = await this.bundler.sendUserOpToBundler(userOp);
-    //   const keyring = this.keyrings[address];
-    //   return await keyring.getUserOpReceipt(userOpHash);
-    // }
+    if (this.bundler) {
+      console.log(userOp, 'sendUserOp');
 
-    if (this.bundlerClient) {
-      console.log('bundlerClient', userOp, address);
-
-      const userOperationHash = await this.bundlerClient.sendUserOperation({
-        userOp
-      })
-      console.log(`UserOperation submitted. Hash: ${userOperationHash}`)
-      return await this.bundlerClient.waitForUserOperationReceipt({
-        hash: userOperationHash,
-      })
+      const userOpHash = await this.bundler.sendUserOpToBundler(userOp);
+      const keyring = this.keyrings[address];
+      return await keyring.getUserOpReceipt(userOpHash);
     }
-
     return null;
   };
 
@@ -434,7 +416,7 @@ export default class KeyringService extends BaseService<Events> {
     context?: any
   ): Promise<UserOperationStruct> => {
     const keyring = this.keyrings[address];
-    const userOp = await resolveProperties(
+    let userOp = await resolveProperties(
       await keyring.createUnsignedUserOpWithContext(
         {
           target: transaction.to,
@@ -478,24 +460,98 @@ export default class KeyringService extends BaseService<Events> {
       sender: address as `0x${string}`,
     })
 
-    if (nonce === 0n) {
-      userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
-      const result = await this.paymasterClient.sponsorUserOperation({
-        userOperation: userOp as UserOperation<"v0.6">,
-      })
 
-      userOp.preVerificationGas = toHex(result.preVerificationGas);
-      userOp.verificationGasLimit = toHex(result.verificationGasLimit);
-      userOp.callGasLimit = toHex(result.callGasLimit);
-      userOp.paymasterAndData = result.paymasterAndData
-      console.log(result.paymasterAndData, 'paymasterAndData');
+    const usdcTokenAddress = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+    console.log(userOp, 'userOp start');
+
+
+    if (userOp.paymasterAndData !== '0x') {
+      if (nonce === 0n) {
+        userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
+        const paymasterAddress = userOp.paymasterAndData as `0x${string}`;
+        const approveData = encodeFunctionData({
+          abi: [
+            {
+              inputs: [
+                { name: "_spender", type: "address" },
+                { name: "_value", type: "uint256" },
+              ],
+              name: "approve",
+              outputs: [{ name: "", type: "bool" }],
+              payable: false,
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          args: [paymasterAddress, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn],
+        })
+        userOp.callData = encodeFunctionData({
+          abi: [
+            {
+              inputs: [
+                { name: "dest", type: "address" },
+                { name: "value", type: "uint256" },
+                { name: "func", type: "bytes" },
+              ],
+              name: "execute",
+              outputs: [],
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          args: [usdcTokenAddress, 0n, approveData],
+        })
+        const result = await this.paymasterClient.sponsorUserOperation({
+          userOperation: userOp as UserOperation<"v0.6">,
+        })
+
+        userOp.preVerificationGas = toHex(result.preVerificationGas);
+        userOp.verificationGasLimit = toHex(result.verificationGasLimit);
+        userOp.callGasLimit = toHex(result.callGasLimit);
+        userOp.paymasterAndData = result.paymasterAndData
+      } else {
+        let { to, value, data } = transaction;
+        const callData = encodeFunctionData({
+          abi: [
+            {
+              inputs: [
+                { name: "dest", type: "address" },
+                { name: "value", type: "uint256" },
+                { name: "func", type: "bytes" },
+              ],
+              name: "execute",
+              outputs: [],
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          args: [to as `0x${string}`, ethers.BigNumber.from(value), data],
+        })
+        userOp.callData = callData;
+
+        userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
+        const result = await this.paymasterClient.sponsorUserOperation({
+          userOperation: userOp as UserOperation<"v0.6">,
+        })
+
+        userOp.preVerificationGas = toHex(result.preVerificationGas);
+        userOp.verificationGasLimit = toHex(result.verificationGasLimit);
+        userOp.callGasLimit = toHex(result.callGasLimit);
+        userOp.paymasterAndData = result.paymasterAndData;
+      }
     }
+
+
+
+    // const gasParameters = await this.bundler?.estimateUserOpGas(
+    //   await keyring.signUserOp(userOp)
+    // );
 
     // const estimatedGasLimit = ethers.BigNumber.from(
     //   gasParameters?.callGasLimit
     // );
     // const estimateVerificationGasLimit = ethers.BigNumber.from(
-    //   gasParameters?.verificationGasLimit
+    //   gasParameters?.verificationGas
     // );
     // const estimatePreVerificationGas = ethers.BigNumber.from(
     //   gasParameters?.preVerificationGas
@@ -518,7 +574,8 @@ export default class KeyringService extends BaseService<Events> {
     // )
     //   ? estimatePreVerificationGas.toHexString()
     //   : userOp.preVerificationGas;
-    userOp.signature = '';
+
+    console.log(userOp, 'unsignedUserOp');
 
     return userOp;
   };
