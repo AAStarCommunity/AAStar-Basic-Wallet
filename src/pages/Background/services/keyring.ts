@@ -19,15 +19,16 @@ import { EthersTransactionRequest } from './types';
 import { UserOperationStruct } from '@account-abstraction/contracts';
 import { resolveProperties } from 'ethers/lib/utils.js';
 
-import {
-  UserOperation,
-  getAccountNonce,
-} from "permissionless";
+import { UserOperation } from "permissionless";
 import { pimlicoPaymasterActions } from "permissionless/actions/pimlico";
-import { createPublicClient, createClient, http, toHex, encodeFunctionData } from 'viem';
+import { createPublicClient, createClient, http, encodeFunctionData } from 'viem';
 import { sepolia } from 'viem/chains';
 import { EntryPoint } from 'permissionless/types/entrypoint';
 
+import EthPaymasterClient from "@aastar/ethpaymaster_sdk_ts";
+
+const devAddress = "https://relay-ethpaymaster-pr-20.onrender.com/";
+// const devAddress = "http://127.0.0.1:80/";
 interface Events extends ServiceLifecycleEvents {
   createPassword: string;
 }
@@ -434,6 +435,9 @@ export default class KeyringService extends BaseService<Events> {
       )
     );
 
+    console.log(userOp, 'userOp start');
+
+
     userOp.nonce = ethers.BigNumber.from(userOp.nonce).toHexString();
     userOp.callGasLimit = ethers.BigNumber.from(
       userOp.callGasLimit
@@ -451,14 +455,35 @@ export default class KeyringService extends BaseService<Events> {
       userOp.maxPriorityFeePerGas
     ).toHexString();
 
+    let ethPaymaster = EthPaymasterClient.development(devAddress)
+
+    const healthRes = await ethPaymaster.health();
+    if (healthRes) {
+      console.log('healthRes', healthRes);
+    }
+    const authRes = await ethPaymaster.auth('string')
+    if (authRes) {
+      console.log(authRes, 'authRes');
+    }
+
+    const entryPoints = await ethPaymaster.getSupportEntryPointV1('ethereum', authRes.token);
+    if (entryPoints) {
+      console.log(entryPoints, 'entryPoints');
+    }
+
+    const strategy = await ethPaymaster.getSupportStrategyV1('ethereum', authRes.token);
+    if (strategy) {
+      console.log(strategy, 'strategy');
+    }
+
     // const gasParameters = await this.bundler?.estimateUserOpGas(
     //   await keyring.signUserOp(userOp)
     // );
 
-    const nonce = await getAccountNonce(this.publicClient, {
-      entryPoint: this.entryPointAddress as EntryPoint,
-      sender: address as `0x${string}`,
-    })
+    // const nonce = await getAccountNonce(this.publicClient, {
+    //   entryPoint: this.entryPointAddress as EntryPoint,
+    //   sender: address as `0x${string}`,
+    // })
 
 
     const usdcTokenAddress = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
@@ -466,7 +491,7 @@ export default class KeyringService extends BaseService<Events> {
 
 
     if (userOp.paymasterAndData !== '0x') {
-      if (nonce === 0n) {
+      if (userOp.nonce === '0x00') {
         userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
         const paymasterAddress = userOp.paymasterAndData as `0x${string}`;
         const approveData = encodeFunctionData({
@@ -501,14 +526,7 @@ export default class KeyringService extends BaseService<Events> {
           ],
           args: [usdcTokenAddress, 0n, approveData],
         })
-        const result = await this.paymasterClient.sponsorUserOperation({
-          userOperation: userOp as UserOperation<"v0.6">,
-        })
 
-        userOp.preVerificationGas = toHex(result.preVerificationGas);
-        userOp.verificationGasLimit = toHex(result.verificationGasLimit);
-        userOp.callGasLimit = toHex(result.callGasLimit);
-        userOp.paymasterAndData = result.paymasterAndData
       } else {
         let { to, value, data } = transaction;
         const callData = encodeFunctionData({
@@ -530,15 +548,37 @@ export default class KeyringService extends BaseService<Events> {
         userOp.callData = callData;
 
         userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
-        const result = await this.paymasterClient.sponsorUserOperation({
-          userOperation: userOp as UserOperation<"v0.6">,
-        })
 
-        userOp.preVerificationGas = toHex(result.preVerificationGas);
-        userOp.verificationGasLimit = toHex(result.verificationGasLimit);
-        userOp.callGasLimit = toHex(result.callGasLimit);
-        userOp.paymasterAndData = result.paymasterAndData;
       }
+    }
+
+    const tryPayUseOp = {
+      force_strategy_id: '1',
+      user_operation: {
+        call_data: userOp.callData,
+        call_gas_limit: userOp.callGasLimit,
+        init_code: userOp.initCode,
+        max_fee_per_gas: userOp.maxFeePerGas,
+        max_priority_fee_per_gas: userOp.maxPriorityFeePerGas,
+        nonce: userOp.nonce,
+        pre_verification_gas: userOp.preVerificationGas,
+        sender: userOp.sender,
+        signature: userOp.signature,
+        verification_gas_limit: userOp.verificationGasLimit,
+        paymaster_and_data: userOp.paymasterAndData,
+      }
+    }
+    console.log(JSON.stringify(tryPayUseOp));
+
+
+    const tryPayUserOpRes = await ethPaymaster.tryPayUserOperationV1(authRes.token, tryPayUseOp);
+    if (tryPayUserOpRes) {
+      console.log(tryPayUserOpRes);
+      const { data: { paymaster_and_data: paymasterAndData, } } = tryPayUserOpRes;
+      // userOp.preVerificationGas = toHex(tryPayUserOpRes.preVerificationGas);
+      // userOp.verificationGasLimit = toHex(tryPayUserOpRes.verificationGasLimit);
+      // userOp.callGasLimit = toHex(tryPayUserOpRes.callGasLimit);
+      userOp.paymasterAndData = paymasterAndData;
     }
 
 
@@ -576,7 +616,6 @@ export default class KeyringService extends BaseService<Events> {
     //   : userOp.preVerificationGas;
 
     console.log(userOp, 'unsignedUserOp');
-
     return userOp;
   };
 
