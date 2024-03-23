@@ -443,7 +443,7 @@ export default class KeyringService extends BaseService<Events> {
       userOp.callGasLimit
     ).toHexString();
     userOp.verificationGasLimit = ethers.BigNumber.from(
-      userOp.verificationGasLimit
+      100_0000n || userOp.verificationGasLimit
     ).toHexString();
     userOp.preVerificationGas = ethers.BigNumber.from(
       userOp.preVerificationGas
